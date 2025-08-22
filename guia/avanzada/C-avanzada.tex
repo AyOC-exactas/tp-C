@@ -333,7 +333,7 @@ En la guía anterior mencionamos al pasar que uno de los tipos nativos de C es e
 
 \begin{center}
   \includegraphics[scale=0.2]{./img/pointer.png}  
-  \label{fig:simpsons-puntero}
+  \label{fig:puntero}
 \end{center}
 
 Comencemos mirando el siguiente código:
@@ -1522,6 +1522,516 @@ Pueden visitar el sitio \url{https://cdecl.org/} para ver declaraciones y su int
   // finalmente, declaramos f4 de tipo f4_t
   f4_t f4;
 \end{cbox}
+
+\newpage
+\section*{Debugging en C}
+\epigraph{\textit{Bugs are not a failure, but a discovery. Each one brings us closer to a solution.}}
+
+A lo largo de la cursada va a ser indispensable la habilidad para interpretar errores y utilizar las herramientas de \textit{debugging}.
+En la mayoría de los casos, sobretodo en \textit{Assembly}, mirar fijo el código no es suficiente (ni eficiente) para encontrar los puntos de falla.
+Repasemos brevemente las herramientas de las que disponemos para esta tarea:
+
+\textbf{GDB:} \textit{debugger} que usaremos para depurar nuestros programas en C o Assembler.
+
+\textbf{Valgrind:} herramienta que verifica el manejo correcto de los recursos del sistema por parte del código ejecutado.
+
+\textbf{man:} utilidad de la terminal de los sistemas UNIX que nos da fácil acceso a la documentación de las funciones de la \hl{libc}, entre otras cosas.
+
+\subsection*{GDB: GNU Debugger}
+
+Si bien existen alternativas, como el \textit{printing debugging}, que pueden ser efectivas en casos puntuales, al trabajar con Assembly las cosas se complican rápidamente.
+Familiarizarse con su uso en C hará mucho más amena la experiencia de uso en assembler y les permitirá programar con confianza en ambos lenguajes.
+
+Con GDB podemos ejecutar un programa paso a paso, establecer puntos de interrupción (\textit{breakpoints}), inspeccionar el valor de variables y registros, e incluso modificar el flujo de ejecución en tiempo real.
+Esto nos permite asegurarnos de que el estado del programa es el esperado durante toda su ejecución y detectar posibles comportamientos inesperados.
+
+En el campus de la materia, sección \textbf{Recursos}, encontrarán dos apuntes con comandos comunes y ejemplos de uso.
+
+Veamos un pequeño ejercicio de ejemplo.
+
+\begin{cbox}[unbreakable]{}
+#include <stdio.h>
+
+void contarHasta(int hasta){
+  for(int i = 0; i < hasta; i++){
+    printf("%d\n", i);
+  }
+}
+
+int main(void){
+  contarHasta(10);
+  return 0;
+}
+\end{cbox}
+
+Copiar el snippet a un archivo C y compilarlo con los símbolos de debug activos: 
+
+\hl{gcc -g <nombre\_del\_archivo>.c \-o main}.
+
+Esto nos generará el ejecutable \hl{main}.
+Ahora, podemos debuggear el programa con \hl{GDB} a través de éste usando el comando \hl{gdb main} en la terminal (parados en el directorio que lo contenga).
+
+Una vez dentro de \hl{GDB}, podemos empezar a seguir la ejecución del programa. Para eso, necesitamos al menos un breakpoint, de lo contrario el programa ejecutaría normalmente hasta finalizar (con o sin éxito). 
+Para colocar un \textit{breakpoint} usamos \hl{b <nombre\_del\_archivo>.c:<selector>} donde el selector puede ser el nombre de una función del programa o una línea específica del archivo.
+
+Prueben lo siguiente:
+
+\begin{itemize}
+  \item Colocar un breakpoint en la función main.
+  \item Usar hl{run} para avanzar la ejecución hasta el primer \textit{breakpoint}.
+  \item Colocar un \textit{breakpoint} en el llamado a la función \hl{contarHasta}.
+  \item Usar \hl{continue} o \hl{c} para avanzar hasta el siguiente \textit{breakpoint}.
+  \item Podemos usar \hl{step into} o \hl{si} para entrar dentro de la ejecución de la función llamada. 
+  \item Una vez entramos en la función, usar \hl{next} o \hl{n} para avanzar a la siguiente línea del archivo actual, independientemente de si se trata de una operación simple o un llamado a función.
+  \item Dentro del ciclo, usar \hl{p <variable>} para ver el valor de las variables de la función en cada paso.
+\end{itemize}
+
+\subsection*{Valgrind: errores comunes y como interpretarlos}
+
+Valgrind\footnote{\url{Más info en https://valgrind.org/docs/manual/quick-start.html}} es una herramienta de depuración que se utiliza para detectar errores de memoria en programas.
+Para usarla, es recomendable compilar el programa con la opción \hl{-g} para incluir información de debugging y luego basta con ejecutar en consola \hl{valgrind ./<programa>}.
+El programa se ejecutará y mientras valgrind irá registrando y mostrando información sobre los \textit{leaks} de memoria, accesos a memoria no válida y otros problemas.
+
+Algunos de los mensajes más comunes son:
+
+\textbf{Invalid Read:} lectura de memoria inválida. Notar que nos indica en qué función, archivo y línea se produjo, el tamaño de la lectura, la dirección leída, y si se encuentra cerca de direcciones válidas o no. Por ejemplo, en este caso la dirección leída se encuentra inmediatamente después (\textit{0 bytes after}) de un bloque válido de memoria de 4 \textit{bytes}.
+\begin{bashbox}[]
+  ==67560== Invalid read of size 4
+  ==67560==    at 0x4012B8: main (debug2.c:68)
+  ==67560==  Address 0x4a9b094 is 0 bytes after a block of size 4 allocd
+  ==67560==    at 0x4848899: malloc (in /usr/libexec/valgrind/...)
+  ==67560==    by 0x4012AF: main (debug2.c:67)
+\end{bashbox}
+
+\textbf{Invalid Write:} intento de escritura sobre una dirección de memoria inválida. Mismos indicadores que el error de lectura.
+\begin{bashbox}[]
+  ==4725== Invalid write of size 4
+  ==4725==    at 0x109187: main (main.c:9)
+  ==4725==  Address 0x4a98068 is 0 bytes after a block of size 40 allocd
+  ==4725==    at 0x484880F: malloc (vg_replace_malloc.c:431)
+  ==4725==    by 0x109165: main (main.c:6)
+\end{bashbox}
+
+\textbf{Conditional jump or move depends on uninitialised value(s):} un salto condicional (un if en C) o una asignación depende de una variable no inicializada. Esto significa que el valor de la variable es basura (no vale asumir que son ceros) ya que no se lo escribió explícitamente, lo que puede resultar en un comportamiento indefinido de nuestro programa (a veces la condición resulta verdadera y otras falsa para el mismo programa).
+\begin{bashbox}[]
+  ==17726== Conditional jump or move depends on uninitialised value(s)
+  ==17726==    at 0x401258: main (debug2.c:71)
+\end{bashbox}
+
+\textbf{Segmentation Fault:} El sistema operativo detiene la ejecución del programa si este intenta acceder a memoria que no corresponde al proceso en ejecución, por ejemplo la dirección de memoria 0x00 (NULL) está reservada por el sistema operativo y saltará un segfault al intentar accederla. La principal diferencia entre este error y los primeros dos mencionados en este apartado es que Valgrind puede atajar esos casos y avisar sobre los accesos indebidos dentro de la memoria del programa. En cambio los \hl{segfault} son faltas que el sistema operativo considera graves y no permite continuar con la ejecución del programa. Notar que Valgrind nos indica cuál fue la dirección a la que se intentó acceder indebidamente (en este caso 0x0).
+\begin{bashbox}[]
+  ==5902== Process terminating with default action of signal 11 (SIGSEGV)
+  ==5902==  Access not within mapped region at address 0x0
+  ==5902==    at 0x1091A3: main (main.c:14)
+\end{bashbox}
+
+\textbf{Memory Leaks:} puede que nuestro programa complete su ejecución sin errores y aparente funcionar correctamente, pero esté infringiendo normas de uso correcto de memoria. Los \textit{memory leaks} corresponden con situaciones donde alguno de los \textit{bytes} que nuestro programa pide al sistema para usar durante su ejecución no son correctamente devueltos al sistema al terminar. Esto podría ser causa de comportamiento inesperado a nivel sistema. El sistema operativo recupera la memoria ocupada al terminar la ejecución del programa, pero mientras está en ejecución la memoria pedida es considerada en uso y no disponible para otros programas, con lo que un mal manejo de memoria puede provocar que se agote el recurso para el sistema entero.
+\begin{bashbox}[]
+  ==17726== LEAK SUMMARY:
+  ==17726==    definitely lost: 16 bytes in 1 blocks
+  ==17726==    indirectly lost: 0 bytes in 0 blocks
+  ==17726==      possibly lost: 0 bytes in 0 blocks
+  ==17726==    still reachable: 0 bytes in 0 blocks
+  ==17726==         suppressed: 0 bytes in 0 blocks
+\end{bashbox}
+
+En este caso, hay 16 \textit{bytes} que seguían reservados al momento de terminar el programa que no fueron liberados. Además, Valgrind nos da información sobre el uso del \textit{heap} por parte de nuestro programa:
+
+\begin{bashbox}[]
+  ==17726== HEAP SUMMARY:
+  ==17726==     in use at exit: 16 bytes in 1 blocks
+  ==17726==   total heap usage: 2 allocs, 1 frees, 1,040 bytes allocated
+\end{bashbox}
+
+Idealmente, deberíamos tener 0 \textit{bytes} en uso al finalizar la ejecución de nuestro código y por cada \hl{alloc} debe corresponderle su respectivo \hl{free}.
+
+\textbf{Tipos de Memory Leaks:} 
+
+\begin{itemize}
+  \item \textbf{Definitely Lost:} Sucede cuando se reserva memoria dinámica pero pierde todas las referencias a ese bloque antes de liberarla con \hl{free}. Como ya no existe ningún puntero válido que referencie ese bloque de memoria, no hay forma de liberarlo más adelante. Ejemplo:
+  \begin{cbox}[]{}
+    int* array = (int*) malloc(sizeof(int)*10);
+    array = NULL; //pierdo para siempre el puntero al bloque pedido
+  \end{cbox}
+  \item \textbf{Indirectly Lost:} Se refiere a cuando se pierde un puntero a un bloque que a su vez tiene punteros a otros bloques. Ejemplo:
+  \begin{cbox}[]{}
+    int** puntero_a_punteros = (int**) malloc(sizeof(int*) * 10);
+
+    for(int i=0; i<10;i++){
+        puntero_a_punteros[i] = (int*) malloc(sizeof(int));
+        *puntero_a_punteros[i] = i;
+    }
+
+    free(puntero_a_punteros); 
+    // Liberamos el puntero al array y, por lo tanto, perdemos acceso 
+    // a los punteros dentro del mismo                          
+  \end{cbox}
+  \item \textbf{Possibly Lost:} Sucede cuando Valgrind encuentra un puntero al interior de un arreglo. El puntero pudo apuntar al principio del arreglo pero en algún momento se lo avanzó o puede ser que no tenga relación alguna. Valgrind marca estos bloques como dudosos porque no puede determinar si todavía existe un puntero válido para liberar este bloque. Ejemplo:
+  \begin{cbox}[]{}
+    // Pedimos memoria
+    char *p = malloc(10);
+
+    // Incrementamos el puntero
+    p = p + 1;
+
+    // Abortamos la ejecución del programa, simulando un crasheo
+    abort();
+
+    // No se puede asegurar que sea el puntero al inicio
+    p = p - 1;
+
+    // Liberamos el bloque
+    free(p);
+  \end{cbox}
+  \item \textbf{Still Reachable:} Significa que al terminar el programa quedó memoria reservada que no se liberó, pero todavía existen punteros válidos que la apunta. Ejemplo:
+  \begin{cbox}[]{}
+    int main() {
+        int *p = malloc(sizeof(int) * 5);
+        return 0; 
+        // Hay un puntero global a la memoria reservada sin liberar
+    }
+  \end{cbox}
+  \item \textbf{Suppressed:} Significa que ciertos errores de memoria fueron omitidos intencionalmente gracias a un archivo de supresiones o a la configuración de Valgrind, dado que provienen de alguna librería o fuente de código externo y no tiene que ver con la ejecución del programa ejecutado directamente.
+\end{itemize}
+
+
+\subsection*{MAN en Linux}
+
+El comando \hl{man} es el manual integrado en la terminal de Linux.
+Permite acceder a documentación sobre funcionalidades de la terminal, syscalls del kernel, funciones de la librería estandar, archivos de configuración, entre otros.
+Pueden usar el comando \hl{man man} para obtener más información sobre el mismo.
+Cada categoría (o página) de documentación está numerada (1: comandos de terminal, 2: syscalls, etc.). En nuestro caso, nos interesa la página 3 ya que contiene las funciones de la \hl{libc} (biblioteca estándar de C).
+Si una entrada existe en varias páginas, hay que indicar el número explícitamente.
+\begin{bashbox}[]
+  man printf    # comando de shell (sección 1)
+  man 3 printf  # función de la libc (sección 3)
+\end{bashbox}
+
+
+\textbf{Ejemplo de uso:}
+
+Veamos un ejemplo ejecutando \hl{man strcpy}.
+
+La entrada correspondiente está dividida en distintas secciones:
+
+\begin{itemize}
+  \item \textbf{NAME:} Lista los nombres que corresponden a esta entrada. A veces agrupa funciones relacionadas o variaciones de una misma.
+  \begin{bashbox}[]
+    NAME
+       strcpy, strncpy - copy a string
+  \end{bashbox}
+  \item \textbf{SYNOPSIS:} En esta sección podemos distinguir:
+  \begin{itemize}
+    \item Las dependencias necesarias (string.h).
+    \item La firma de la función (parámetros y tipo de dato que devuelve) que debemos respetar para su uso en nuestros programas.
+  \end{itemize}
+  \begin{bashbox}[]
+    SYNOPSIS
+       #include <string.h>
+
+       char *strcpy(char *dest, const char *src);
+
+       char *strncpy(char *dest, const char *src, size_t n);
+  \end{bashbox}
+  \item \textbf{DESCRIPTION:} Explicación en lenguaje natural del funcionamiento y motivación de la función.
+  \begin{bashbox}[]
+    DESCRIPTION
+      The  strcpy() function copies the string pointed to by src, including
+      the terminating null byte ('\0'), to the buffer pointed to by dest.
+      The strings may not overlap, and the destination string dest must be
+      large enough to receive the copy. Beware of buffer overruns! 
+      (See BUGS.)
+      ...
+  \end{bashbox}
+  \item \textbf{RETURN VALUE:} Qué devuelve la función en una ejecución correcta (o en caso de error, según corresponda).
+  \begin{bashbox}[]
+    RETURN VALUE
+       The strcpy() and strncpy() functions return a pointer to the 
+       destination string dest.
+  \end{bashbox}
+  \item \textbf{ATTRIBUTES:} Muestra atributos de seguridad y concurrencia de la función, por ejemplo la siguiente tabla donde \textit{see attributes(7)} indica que con \hl{man 7 attributes} podemos obtener más información sobre los términos que la componen:
+  \begin{bashbox}[]
+      For an explanation of the terms used in this section, see attributes(7)
+      ...
+  \end{bashbox} 
+  \item \textbf{CONFORMING TO:} Estándares (POSIX, ISO C, etc.) que cumple la implementación actual.
+  \begin{bashbox}[]
+    CONFORMING TO
+       POSIX.1-2001, POSIX.1-2008, C89, C99, SVr4, 4.3BSD.
+  \end{bashbox}
+  \item \textbf{NOTES:} Información adicional que no encaja en otras secciones.
+  \begin{bashbox}[]
+    NOTES
+       Some  programmers  consider  strncpy() to be inefficient 
+       and error prone.  If the programmer knows (i.e., includes 
+       code to test!) that the size of dest is greater than the
+       length of src, then strcpy() can be used.
+        ...
+  \end{bashbox}
+  \item \textbf{BUGS:} ¿Por qué existe esta sección en funciones de la \hl{libc}? En muchos casos no son “bugs” de implementación, sino limitaciones o peligros del diseño original. Cambiar su comportamiento rompería miles de programas que dependen de él. Se documentan aquí para advertir al programador y, en algunos casos, recomendar funciones alternativas más seguras. En el caso de \hl{strcpy()}, suele recomendarse \hl{strncpy()} o \hl{strlcpy()} (en BSD).
+  \begin{bashbox}[]
+    BUGS
+       If the destination string of a strcpy() is not large enough,
+       then anything might happen. 
+       Overflowing fixed-length string buffers is a favorite cracker
+       technique for taking complete control of the machine.
+       ...
+  \end{bashbox}
+  \item \textbf{SEE ALSO:} Referencias a funciones relacionadas o documentación complementaria.
+  \begin{bashbox}[]
+    SEE ALSO
+       bcopy(3), memccpy(3), memcpy(3), memmove(3), stpcpy(3), 
+       stpncpy(3), strdup(3), string(3), wcscpy(3), wcsncpy(3)
+  \end{bashbox}
+  \item \textbf{COLOPHON: } Contiene:
+  \begin{itemize}
+    \item El paquete al que pertenece la página (man-pages en Linux).
+    \item El proyecto de documentación que la mantiene.
+    \item Un enlace al sitio web y a la forma de reportar bugs en la página de manual. 
+  \end{itemize}
+  \begin{bashbox}[]
+    COLOPHON
+       This page is part of release 5.10 of the Linux man-pages project.
+       A description of the project, information about reporting bugs, 
+       and the latest version of this page, can be found at 
+       https://www.kernel.org/doc/man-pages/.
+  \end{bashbox}
+\end{itemize}
+
+\newpage
+\subsection*{Ejercicio de Debugging}
+
+\textbf{Parte 1:}
+El heladero Pedro quiere desarrollar una plataforma de compra y venta de helados usando el lenguaje C. Veremos algunos problemas que se encontró durante su trabajo en la aplicación (aún en desarrollo, va lento porque Pedro nunca aprendió a usar GDB).
+Observen la siguiente pieza de código, se trata de una función que Pedro implementó para dar de alta usuarios.
+
+\begin{cbox}[]{Parte 1}
+  #include <stdio.h>
+  #include <stdlib.h>
+  #include <stdint.h>
+
+  typedef struct{
+      char nombre[5];
+      uint8_t habilitado; // bool
+      int saldo;
+      int gustoDeHeladoFavorito;
+  } usuario_t;
+
+  void habilitarUsuario(usuario_t *usuario){
+      usuario->habilitado = 1;
+      for(int i = 0; i <= 5; i++){
+          usuario->nombre[i] = '\0';
+      }
+      usuario->saldo = 0;
+  }
+
+  int main(void){
+      usuario_t *nuevoUsuario = malloc(sizeof(usuario_t));
+      habilitarUsuario(nuevoUsuario);
+
+      if(nuevoUsuario->habilitado){
+          printf("Usuario habilitado con éxito!\n");
+      } else{
+          printf("Error al habilitar usuario.\n");
+      }
+    
+      free(nuevoUsuario);
+      return 0;
+  }
+\end{cbox}
+
+Compilen con información de debug activa y ejecuten el programa. Pedro espera poder habilitar a los usuarios correctamente, ¿cuál es la salida obtenida?
+
+Utilicen GDB para determinar el origen del problema. Una vez detectado, corrijanlo y asegurense de que los usuarios pueden ser dados de alta correctamente.
+
+Pista: analicen qué sucede dentro de la función \hl{habilitarUsuario}.
+
+\textbf{Parte 2:}
+Con el sistema de alta de usuarios listo, lo siguiente que desarrolló es la funcionalidad de comprar. 
+Es necesario que el saldo del comprador sea suficiente, por lo que Pedro empezó programando la función \hl{aumentarSaldo}.
+
+Tomen esta pieza de código y reemplacen \hl{habilitarUsuario} por su versión corregida.
+\begin{cbox}[]{Parte 2}
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+
+typedef enum{
+    MENTA,
+    DDL,
+    OREO,
+    LIMON
+} gustoDeHelado_t;
+
+char* gustosDeHelado[4]= {"MENTA", "DDL", "OREO", "LIMON"};
+
+typedef struct{
+    uint32_t precio;
+    gustoDeHelado_t gusto;
+} helado_t;
+
+helado_t heladoDDL = {.precio = 5, .gusto = DDL}; 
+
+typedef struct{
+    char nombre[5];
+    uint8_t habilitado; // bool
+    int saldo;
+    int gustoDeHeladoFavorito;
+} usuario_t;
+
+void habilitarUsuario(usuario_t *usuario){
+    usuario->habilitado = 1;
+    for(int i = 0; i <= 5; i++){
+        usuario->nombre[i] = '\0';
+    }
+    usuario->saldo = 0;
+}
+
+void aumentarSaldo(int saldoDelUsuario, int cantidad){
+    saldoDelUsuario += cantidad;
+}
+
+void comprarHelado(usuario_t *usuario, helado_t* *helado){
+    if(usuario->saldo >= 5){
+        usuario->saldo -= 5;
+        *helado = &heladoDDL;
+        printf("Helado comprado con exito\n");
+    }else{
+        printf("El usuario no tiene saldo suficiente\n");
+    }
+}
+\end{cbox}
+\begin{cbox}[]{Parte 2 cont.}
+int main(void){
+    usuario_t *nuevoUsuario = malloc(sizeof(usuario_t));
+    habilitarUsuario(nuevoUsuario);
+ 
+    if(nuevoUsuario->habilitado){
+        printf("Usuario habilitado con éxito!\n");
+        aumentarSaldo(nuevoUsuario->saldo, 10);
+
+        helado_t* helado = NULL;
+        comprarHelado(nuevoUsuario, &helado);
+        nuevoUsuario->gustoDeHeladoFavorito = helado->gusto;
+      
+        printf("Usuario creado con éxito. \n")
+        printf("Su saldo es de %d pesos y su gusto favorito es %s.\n", 
+               nuevoUsuario->saldo, 
+               gustosDeHelado[nuevoUsuario->gustoDeHeladoFavorito]
+        );
+    } else{
+        printf("Error al habilitar usuario %d\n", nuevoUsuario->habilitado);
+    }
+  
+    free(nuevoUsuario);
+    return 0;
+}
+\end{cbox}
+
+Luego vuelvan a compilar el programa con la información de debug activa y ejecutenlo. ¿Cuál es la salida del programa?
+
+Ejecuten el programa compilado usando Valgrind. ¿Qué errores de memoria detecta?
+
+Usen GDB para encontrar el origen del problema, corrijanlo y asegurense de que puede agregarse saldo a los usuarios correctamente y realizar una compra.
+
+Ejecuten el programa corregido con Valgrind y verificar si aún presenta errores de memoria.
+
+\textbf{Parte 3:}
+Consciente de que no sabe bien lo que está haciendo, Pedro nos envió la versión más actualizada de su implementación y nos pide que la revisemos para asegurarnos de que todo funciona como debe.
+Probablemente debido al cansancio del trabajo en la heladería, el código que nos envió no tiene corregidos los errores antes mencionados y tampoco nos explicó qué funcionalidades nuevas implementó.
+
+\begin{cbox}[]{Parte 3}
+  
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+
+typedef enum{
+    MENTA,
+    DDL,
+    OREO,
+    LIMON
+} gustoDeHelado_t;
+
+\end{cbox}
+\begin{cbox}[]{Parte 3 cont.}
+
+typedef enum{
+    ABIERTO,
+    CERRADO
+} estadoDelLocal;
+
+char* gustosDeHelado[4]= {"MENTA", "DDL", "OREO", "LIMON"};
+
+typedef struct{
+    uint32_t precio;
+    gustoDeHelado_t gusto;
+} helado_t;
+
+helado_t heladoDDL = {.precio = 5, .gusto = DDL}; 
+
+typedef struct{
+    char nombre[5];
+    uint8_t habilitado; // bool
+    int saldo;
+    int gustoDeHeladoFavorito;
+} usuario_t;
+
+void habilitarUsuario(usuario_t *usuario){
+    usuario->habilitado = 1;
+    for(int i = 0; i <= 5; i++){
+        usuario->nombre[i] = '\0';
+    }
+    usuario->saldo = 0;
+}
+
+
+void aumentarSaldo(int saldoDelUsuario, int cantidad){
+    saldoDelUsuario += cantidad;
+}
+
+void comprarHelado(usuario_t *usuario, helado_t* *helado){
+    if(usuario->saldo >= 5){
+        usuario->saldo -= 5;
+        *helado = &heladoDDL;
+        printf("Helado comprado con exito\n");
+    }else{
+        printf("El usuario no tiene saldo suficiente\n");
+    }
+}
+
+\end{cbox}
+\begin{cbox}[]{Parte 3 cont.}
+
+int main(void){
+  usuario_t *nuevoUsuario = malloc(sizeof(usuario_t));
+  habilitarUsuario(nuevoUsuario);
+  int local_abierto;
+  
+  if(local_abierto == ABIERTO){
+      if(nuevoUsuario->habilitado){
+          printf("Usuario habilitado con éxito!\n");
+          aumentarSaldo(nuevoUsuario->saldo, 10);
+
+          helado_t* helado = NULL;
+          comprarHelado(nuevoUsuario, &helado);
+          nuevoUsuario->gustoDeHeladoFavorito = helado->gusto;
+
+          printf("Usuario creado con éxito. \n")
+          printf("Su saldo es de %d pesos y su gusto favorito es %s.\n", 
+                nuevoUsuario->saldo, 
+                gustosDeHelado[nuevoUsuario->gustoDeHeladoFavorito]
+          );
+      } else{
+        printf("Error al habilitar usuario %d\n", nuevoUsuario->habilitado);
+      }
+  }
+  free(nuevoUsuario);
+  return 0;
+}
+\end{cbox}
+
+Exploren el código, identifiquen los errores y corríjanlos. 
 
 \newpage
 \section*{Anexo: Ejemplo integrador}
